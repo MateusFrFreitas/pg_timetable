@@ -247,7 +247,7 @@ func (sch *Scheduler) executeСhainElement(ctx context.Context, tx pgx.Tx, task 
 			l.Info("Program task execution skipped")
 			return -2
 		}
-		retCode, out, err = sch.ExecuteProgramCommand(ctx, task.Script, paramValues)
+		retCode, out, err = sch.ExecuteProgramCommandWithOptions(ctx, &ExecuteProgramOptions{task.ChainID, task.TaskID, task.Script, paramValues})
 	case "BUILTIN":
 		out, err = sch.executeTask(ctx, task.Script, paramValues)
 	}

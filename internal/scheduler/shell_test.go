@@ -26,6 +26,13 @@ func (c testCommander) CombinedOutput(ctx context.Context, command string, args 
 	return []byte(fmt.Sprintf("Command %s not found", command)), &exec.Error{Name: command, Err: exec.ErrNotFound}
 }
 
+func (c testCommander) CombinedOutputWithOptions(ctx context.Context, o *scheduler.CommanderOptions) ([]byte, error) {
+	if strings.HasPrefix(o.Command, "ping") {
+		return []byte(fmt.Sprintf(o.Command, o.Args)), nil
+	}
+	return []byte(fmt.Sprintf("Command %s not found", o.Command)), &exec.Error{Name: o.Command, Err: exec.ErrNotFound}
+}
+
 func TestShellCommand(t *testing.T) {
 	scheduler.Cmd = testCommander{}
 	var err error
@@ -67,6 +74,51 @@ func TestShellCommand(t *testing.T) {
 	assert.IsType(t, (*exec.Error)(nil), err, "Uknown command should produce error")
 
 	retCode, _, err = scheduler.ExecuteProgramCommand(ctx, "ping5", []string{`{"param1": "localhost"}`})
+	assert.IsType(t, (*json.UnmarshalTypeError)(nil), err, "Command should fail with mailformed json parameter")
+	assert.NotEqual(t, 0, retCode, "return code should indicate failure.")
+}
+
+func TestShellCommandWithOptions(t *testing.T) {
+	scheduler.Cmd = testCommander{}
+	var err error
+	var out string
+	var retCode int
+
+	mock, err := pgxmock.NewPool() //pgxmock.MonitorPingsOption(true)
+	assert.NoError(t, err)
+	pge := pgengine.NewDB(mock, "scheduler_unit_test")
+	sch := scheduler.New(pge, log.Init(config.LoggingOpts{LogLevel: "error"}))
+	ctx := context.Background()
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "", []string{""}})
+	assert.EqualError(t, err, "Program command cannot be empty", "Empty command should out, fail")
+
+	_, out, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping0", nil})
+	assert.NoError(t, err, "Command with nil param is out, OK")
+	assert.True(t, strings.HasPrefix(string(out), "ping0"), "Output should containt only command ")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping1", []string{}})
+	assert.NoError(t, err, "Command with empty array param is OK")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping2", []string{""}})
+	assert.NoError(t, err, "Command with empty string param is OK")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping3", []string{"[]"}})
+	assert.NoError(t, err, "Command with empty json array param is OK")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping3", []string{"[null]"}})
+	assert.NoError(t, err, "Command with nil array param is OK")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping4", []string{`["localhost"]`}})
+	assert.NoError(t, err, "Command with one param is OK")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping5", []string{`["localhost", "-4"]`}})
+	assert.NoError(t, err, "Command with many params is OK")
+
+	_, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "pong", nil})
+	assert.IsType(t, (*exec.Error)(nil), err, "Uknown command should produce error")
+
+	retCode, _, err = sch.ExecuteProgramCommandWithOptions(ctx, &scheduler.ExecuteProgramOptions{0, 0, "ping5", []string{`{"param1": "localhost"}`}})
 	assert.IsType(t, (*json.UnmarshalTypeError)(nil), err, "Command should fail with mailformed json parameter")
 	assert.NotEqual(t, 0, retCode, "return code should indicate failure.")
 }
